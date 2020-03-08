@@ -1,26 +1,22 @@
-#include <SPI.h>
-#include <Wire.h>
+//#include <LoRaLib.h>
+//#include <SPI.h>
+//#include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BNO055.h>
+//#include <Adafruit_BNO055.h>
 #include <Adafruit_ADXL345_U.h>
 #include <Adafruit_BMP280.h>
-#include <Adafruit_GPS.h>
-#include <RH_RF95.h>
-#include <RadioHead.h>
+#include <NMEAGPS.h>
+//#include <RH_RF95.h>
+//#include <RadioHead.h>
+
+
 
 /*
   Sensors:
   - Adafruit_BMP280
-  - Adafruit_BN
-init
-SD oksetup
-Sending
-save_packet
-fin_bno
-init
-O055
+  - Adafruit_BNO055
   - Adxl345
   - GPS
   - Resistor
@@ -30,8 +26,8 @@ O055
   - RFM95
 */
 
-#define ERROR_LED    9
-#define INFO_LED     10
+#define ERROR_LED    10
+#define INFO_LED     9
 
 #define RFM95_INT     3
 #define RFM95_RST     6
@@ -44,15 +40,15 @@ O055
 #define BMP_CS        4
 #define SD_CS         7
 
-#define GPS_REFRESH_RATE 10000
-
 //boolean info_led_state = false;
 
-RH_RF95 rf95(RFM95_CS,RFM95_INT);
-Adafruit_BNO055 bno = Adafruit_BNO055(55);
+//RH_RF95 rf95(RFM95_CS,RFM95_INT);
+//Adafruit_BNO055 bno = Adafruit_BNO055(55);
+//RFM96 rf95 = new LoRa;
 Adafruit_BMP280 bmp(BMP_CS);
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
-Adafruit_GPS GPS(&Serial2);
+Adafruit_GPS GPS(&Serial);
+
 
 typedef struct {
   unsigned int packet_number;
@@ -77,24 +73,21 @@ packet_struct packet;
 //packet_struct adxl_bmp_packet;
 //packet_struct gps_packet;
 
-imu::Vector<3> vect;
-imu::Quaternion quat;
+/*imu::Vector<3> vect;
+imu::Quaternion quat;*/
 sensors_event_t event;
+gps_fix fix;
 
-long last_gps_time=-100000;
-String last_gps_value="None";
-String gps_value="None";
 File dataFile;
 
 void setup() {
   Serial.begin(9600);
   Serial.println("init");
   pinMode(SD_CS, OUTPUT);
-  pinMode(INFO_LED,OUTPUT);
   if (!SD.begin(SD_CS)) {
     Serial.print("pb SD on CS ");
     Serial.println(SD_CS);
-    error();
+    while(1);
   }
   Serial.print("SD ok");
   pinMode(RFM95_RST, OUTPUT);
@@ -111,38 +104,40 @@ void setup() {
     Serial.println("pb bmp");
     while(1);
   }
+
   
-  if(!bno.begin()){
+/*  if(!bno.begin()){
     Serial.println("pb bno");
-    error();
-  }
+    while(1);
+  }*/
   
   digitalWrite(RFM95_RST, LOW);
   delay(10);
   digitalWrite(RFM95_RST, HIGH);
   delay(10);
-  if(!rf95.init()){
+  /*if(!rf95.init()){
     Serial.println("pb rf95");
-    error();
-  }
+    while(1);
+  }*/
 
   delay(1000);
 
   //SETUP TELEM
-  rf95.setFrequency(433.0);
-  rf95.setTxPower(23, false);
-//  rf95.setLowDatarate();
-
+  //rf95.setFrequency(433.0);
+  //rf95.setTxPower(1, false);
 
   //SETUP SD
+
   //SETUP GPS
   GPS.begin(9600);
-  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_GGAONLY);
-  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+  //GPS.sendCommand("$PMTK251,57600*2C");
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_GGAONLY); 
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_10HZ); 
+  delay(1000);
   
   //SETUP BNO
   
-  bno.setExtCrystalUse(true);
+//  bno.setExtCrystalUse(true);
     
   //SETUP Adxl345
   accel.setRange(ADXL345_RANGE_16_G);
@@ -155,14 +150,15 @@ void setup() {
                   Adafruit_BMP280::FILTER_X8,
                   Adafruit_BMP280::STANDBY_MS_1);
            Serial.println("setup"); Serial.flush();
-  digitalWrite(INFO_LED,HIGH);
+           
+  dataFile = SD.open("datalog.txt", FILE_WRITE);
 }
 
 
 void loop() {
   
   //BNO
-  quat = bno.getQuat();
+  /*quat = bno.getQuat();
   vect = bno.getVector(Adafruit_BNO055::VECTOR_MAGNETOMETER);
   packet.time=millis();
 
@@ -203,89 +199,60 @@ void loop() {
   packet.packet_number = 1;
 Serial.println("fin_bno"); Serial.flush();
   send_binary_packet(packet, true);
-Serial.println("fin_telem"); Serial.flush();
+Serial.println("fin_telem"); Serial.flush();*/
   //Adxl345
 
 
   accel.getEvent(&event);
-  packet.time=millis();
   packet.value1 = event.acceleration.x;
   packet.value2 = event.acceleration.y;
   packet.value3 = event.acceleration.z;
   packet.packet_number = 2;
-  //BMP280-
+  //BMP280
+  packet.time=millis();
   packet.value4 = bmp.readPressure();
   packet.value5 = bmp.readTemperature();
-
-  //ANALOG
-  packet.value6 = analogRead(A0);
-  packet.value7 = analogRead(A1);
-  packet.value8 = analogRead(A2);
-  packet.value9 = analogRead(A3);
-  Serial.println("fin_bmp"); Serial.flush();
+Serial.println("fin_bmp"); Serial.flush();
   send_binary_packet(packet, false);
 
+  
   //GPS
-  /*
-  if(millis()-last_gps_time>GPS_REFRESH_RATE){
+  if!GPS.newNMEAreceived(){
     GPS.read();
-    while(!GPS.newNMEAreceived()){
-      GPS.read();
-    }
-    gps_value=GPS.lastNMEA();
-    gps_value=gps_value.substring(0,63);
-    gps_value.replace("\n","");
-    gps_value=gps_value+String("\n");
-    last_gps_value=gps_value;
-    last_gps_time=millis();
-    gps_value=gps_value+String("|V");
+    send_string_packet(3,GPS.lastNMEA());
   }else{
-    gps_value=last_gps_value+String("|F");
+    send_string_packet(3,"None");
   }
-  send_string_packet(3,gps_value);*/
+
+  
 }
 
-
+/*
 void send_string_packet(unsigned int packet_number, String input) {
-  String string_packet = String(packet_number) + String("|");
-  string_packet = string_packet + String(millis());
+  String string_packet = String(millis());
   string_packet = string_packet + String("|");
   string_packet = string_packet + input;
 
-  char char_packet[string_packet.length()];
-  string_packet.toCharArray(char_packet, string_packet.length());
+  char char_packet[60];
+  string_packet.toCharArray(char_packet, 60);
 
-  Serial.write(char_packet);
-  rf95.waitPacketSent();
-  Serial.println("");
-  Serial.println(sizeof(char_packet));
-  Serial.println(char_packet);
-  Serial.println("");
-  rf95.send(char_packet,sizeof(char_packet));
-  dataFile = SD.open("DATA.txt", FILE_WRITE);
-  dataFile.println(string_packet);
-  dataFile.close();
+//  rf95.waitPacketSent();
+  rf95.transmit(string_packet);
 }
-
+*/
 
 void send_binary_packet(packet_struct packet, boolean sd_write) {
-  rf95.waitPacketSent();
-  Serial.println("Sending"); Serial.flush();
-  uint8_t char_packet[sizeof(packet)]; 
-  memcpy(char_packet,&packet,sizeof(packet));
-  //uint8_t *char_packet="test";
-  if(!rf95.waitPacketSent(750)){
-    rf95.setModeIdle();
-    Serial.println("ERROR################################################################################");
-  }
-  
-  rf95.send(char_packet,sizeof(char_packet));
+  //rf95.waitPacketSent();
+  //uint8_t char_packet[sizeof(packet_struct)]; 
+  //memcpy(char_packet,&packet,sizeof(packet_struct));
+  //uint8_t *char_packet="test"; 
+  //rf95.send(char_packet,sizeof(char_packet));
+  //rf95.transmit(char_packet);
   save_packet(packet);
 }
 
 void save_packet(packet_struct packet) {
-  Serial.println("save_packet"); Serial.flush();
-  dataFile = SD.open("DATA.txt", FILE_WRITE);
+  Serial.println("save");
   dataFile.print(packet.packet_number);
   dataFile.print("|");
   dataFile.print(packet.time);
@@ -343,17 +310,7 @@ void save_packet(packet_struct packet) {
     dataFile.print(packet.value13, 3);
     dataFile.print("|");
   }
+  Serial.println("fin_save");
   dataFile.println();
-  dataFile.close();
- 
-}
-
-void error(){
-  while(1){
-    digitalWrite(INFO_LED,HIGH);
-    delay(350);
-    digitalWrite(INFO_LED,LOW);
-    delay(350);
-    Serial.println("ERROR");
-  }
+  dataFile.flush();
 }
